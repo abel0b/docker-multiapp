@@ -1,0 +1,21 @@
+stages:
+    - test
+
+test:
+    stage: test
+    image: docker:dind
+    variables:
+        SERVICES_CONF: >
+            [services.static]
+            domains="static.example.org www.static.example.org"
+            endpoint="static_example"
+            
+            [services.blog]
+            domains="example.org www.example.org"
+            endpoint="blog_example"
+    services:
+        - echo $SERVICES_CONF > services.conf
+        - ./manage.sh build
+        - docker stack deploy --compose-file docker-compose.yml docker-multiapp
+        - docker run -d --name static_example --network multiapp -v $PWD:/var/www/html nginx
+        - docker run -d --name blog_example --network multiapp ghost
