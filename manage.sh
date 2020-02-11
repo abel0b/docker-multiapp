@@ -6,10 +6,16 @@ green=$(tput setaf 2)
 work_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" > /dev/null 2>&1 && pwd)
 config=$work_dir/services.conf
 network="multiapp"
+
 declare -a services
 declare -a domains
 declare -a endpoints
+declare -a https
 declare -a networks
+
+default_domain=example.org
+default_endpoint=example.org
+default_https=true
 
 error() {
     echo -e "\e[31m[error]\e[0m $*"
@@ -24,7 +30,7 @@ function gen_docker_compose() {
     echo "        image: nginx"
     echo "        ports:"
     echo "            - 80:80"
-    #echo "            - 443:443"
+    echo "            - 443:443"
     echo "        volumes:"
     echo "            - $work_dir/nginx:/etc/nginx/conf.d:ro"
     echo "        networks:"
@@ -80,8 +86,9 @@ function parse_config() {
                     if [[ "$section" =~ ^services.(.+) ]]
                     then
                         services+=(${BASH_REMATCH[1]})
-                        domains+=("example.org")
-                        endpoints+=("example.org")
+                        domains+=("$default_domain")
+                        endpoints+=("$default_endpoint")
+                        https+=("$default_https")
                         service_id=$((${#services[@]}-1))
                         state="service"
                     else
@@ -105,6 +112,9 @@ function parse_config() {
                         endpoint)
                             endpoints[$service_id]=${value//\"/}
                             ;;
+                        https)
+                            https[$service_id]=$value
+                            ;; 
                         *)
                             error "Invalid property '$property'"
                             ;;
@@ -115,8 +125,9 @@ function parse_config() {
                     if [[ "$section" =~ ^services.(.+) ]]
                     then
                         services+=(${BASH_REMATCH[1]})
-                        domains+=("example.org")
-                        endpoints+=("example.org")
+                        domains+=("$default_domain")
+                        endpoints+=("$default_endpoint")
+                        https+=("$default_https")
                         service_id=$((${#services[@]}-1))
                         state="service"
                     else

@@ -14,7 +14,7 @@ test:
             domains="example.org www.example.org"
             endpoint="blog_example"
     script:
-        - echo $SERVICES_CONF > services.conf
+        - echo "$SERVICES_CONF" > services.conf
         - ./manage.sh build
         - docker stack deploy --compose-file docker-compose.yml docker-multiapp
         - docker run -d --name static_example --network multiapp -v $PWD:/var/www/html nginx
