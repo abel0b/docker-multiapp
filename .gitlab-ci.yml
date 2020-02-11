@@ -3,7 +3,7 @@ stages:
 
 test:
     stage: test
-    image: docker:dind
+    image: docker:18-dind
     variables:
         SERVICES_CONF: |
             [services.static]
