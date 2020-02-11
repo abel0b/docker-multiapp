@@ -14,7 +14,7 @@ test:
             domains="example.org www.example.org"
             endpoint="blog_example"
     before_script:
-        - apk add --no-cache bash
+        - apk add --no-cache bash git ncurses
     script:
         - echo "$SERVICES_CONF" > services.conf
         - ./manage.sh build
