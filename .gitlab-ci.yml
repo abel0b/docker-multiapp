@@ -13,9 +13,8 @@ test:
             [services.blog]
             domains="example.org www.example.org"
             endpoint="blog_example"
-        variables:
-            DOCKER_DRIVER: overlay2
-            DOCKER_TLS_CERTDIR: ""
+        DOCKER_DRIVER: overlay2
+        DOCKER_TLS_CERTDIR: ""
     before_script:
         - apk add --no-cache bash git ncurses
     script:
