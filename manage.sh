@@ -1,8 +1,8 @@
 #!/bin/bash
 
-bold=$(tput bold)
-normal=$(tput sgr0)
-green=$(tput setaf 2)
+bold="\e[1m"
+normal="\e[0m"
+green="\e[32m"
 work_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" > /dev/null 2>&1 && pwd)
 config=$work_dir/services.conf
 network="multiapp"
@@ -166,7 +166,7 @@ function command_status() {
     # TODO: ping services
     for service in "${services[@]}"
     do
-        echo "$service ${green}OK$normal"
+        echo -e "$service ${green}OK$normal"
     done
 }
 
@@ -174,6 +174,7 @@ function command_build() {
     gen_docker_compose > docker-compose.yml
 
     mkdir -p nginx
+    rm -rf nginx/*.conf
     for i in "${!services[@]}"
     do
         gen_nginx_conf $i > nginx/${services[$i]}.conf
