@@ -5,7 +5,7 @@ test:
     stage: test
     image: docker:dind
     variables:
-        SERVICES_CONF: >
+        SERVICES_CONF: |
             [services.static]
             domains="static.example.org www.static.example.org"
             endpoint="static_example"
