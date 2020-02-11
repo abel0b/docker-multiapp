@@ -13,7 +13,7 @@ test:
             [services.blog]
             domains="example.org www.example.org"
             endpoint="blog_example"
-    services:
+    script:
         - echo $SERVICES_CONF > services.conf
         - ./manage.sh build
         - docker stack deploy --compose-file docker-compose.yml docker-multiapp
