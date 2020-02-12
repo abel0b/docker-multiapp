@@ -46,7 +46,7 @@ docker stack deploy --compose-file docker-compose.yml docker-multiapp
 
 Run applications. Note that they must be in the same network than the nginx container.
 ```bash
-docker run -d --name static_example --network multiapp -v /path/to/my/static/files:/var/www/html nginx
+docker run -d --name static_example --network multiapp -v /path/to/my/static/files:/usr/share/nginx/html nginx
 docker run -d --name blog_example --network multiapp ghost
 ```
 
@@ -54,7 +54,7 @@ Open `static.example.org` and `blog.example.org` in a browser.
 
 ### Features
 - [x] Generate nginx and docker configuration
-- [ ] Self-signed automatic ssl certificates via certbot
+- [x] Self-signed automatic ssl certificates via certbot
 - [ ] HTTP2
 - [ ] Support different protocols
 - [ ] Configuration file option
