@@ -1,21 +1,20 @@
 # Docker multiapp [![pipeline status](https://gitlab.com/abel0b/docker-multiapp/badges/master/pipeline.svg)](https://gitlab.com/abel0b/docker-multiapp/-/commits/master)
 Host several applications under nginx proxy with docker.
 
+### Features
+- [x] Generate nginx and docker configuration
+- [x] Self-signed ssl certificates via certbot
+- [x] Automatic certificate renewal
+- [ ] Docker swarm mode
+- [ ] Health check
+
 ### Usage
 Configure your services in `services.conf`.
 
-Generate nginx and docker configuration.
-```bash
-./manage.sh build
-```
+Generate configuration and deploy services.
 
-Then deploy your server on a docker swarm
 ```bash
-docker stack deploy --compose-file docker-compose.yml docker-multiapp
-```
-Or with docker-compose
-```bash
-docker-compose up
+./manage.sh up
 ```
 
 Check status of deployed services.
@@ -38,10 +37,9 @@ domains="example.org www.example.org"
 endpoint="blog_example"
 ```
 
-Generate configuration and deploy proxy.
+Generate configuration and deploy services.
 ```bash
-./manage.sh build
-docker stack deploy --compose-file docker-compose.yml docker-multiapp
+./manage.sh up
 ```
 
 Run applications. Note that they must be in the same network than the nginx container.
@@ -52,9 +50,3 @@ docker run -d --name blog_example --network multiapp ghost
 
 Open `static.example.org` and `blog.example.org` in a browser.
 
-### Features
-- [x] Generate nginx and docker configuration
-- [x] Self-signed automatic ssl certificates via certbot
-- [ ] HTTP2
-- [ ] Support different protocols
-- [ ] Configuration file option

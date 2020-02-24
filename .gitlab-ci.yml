@@ -13,14 +13,11 @@ test:
             [services.blog]
             domains="example.org www.example.org"
             endpoint="blog_example"
-        DOCKER_DRIVER: overlay2
-        DOCKER_TLS_CERTDIR: ""
     before_script:
-        - apk add --no-cache bash git ncurses
+        - apk add --no-cache bash git
     script:
         - echo "$SERVICES_CONF" > services.conf
-        - ./manage.sh build
         - docker swarm init
-        - docker stack deploy --compose-file docker-compose.yml docker-multiapp
+        - ./manage.sh up
         - docker run -d --name static_example --network multiapp -v $PWD:/var/www/html nginx
         - docker run -d --name blog_example --network multiapp ghost

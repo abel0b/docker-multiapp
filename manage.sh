@@ -1,12 +1,12 @@
 #!/bin/bash
-
 work_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" > /dev/null 2>&1 && pwd)
 config=$work_dir/services.conf
-network="multiapp"
 email="admin@example.org"
 staging=${staging:-"false"}
-swarm=${swarm:-"false"}
+swarm=${swarm:-"true"}
 strict=${strict:-"true"}
+force=${force:-"false"}
+stack=multiapp
 bold="\e[1m"
 normal="\e[0m"
 green="\e[32m"
@@ -17,6 +17,8 @@ declare -a endpoints
 declare -a https
 declare -a networks
 
+networks+=("multiapp")
+
 default_domain=example.org
 default_endpoint=example.org
 default_https=true
@@ -25,15 +27,6 @@ if [[ "$strict" = "true" ]]
 then
     set -e
 fi
-
-function docker_up() {
-    if [[ "$swarm" = "true" ]]
-    then
-        docker stack deploy --compose-file docker-compose.yml $network
-    else
-        docker-compose up -d $1
-    fi
-}
 
 error() {
     echo -e "\e[31m[error]\e[0m $*"
@@ -45,7 +38,7 @@ function gen_docker_compose() {
     echo
     echo "services:"
     echo "    nginx:"
-    echo "        image: nginx"
+    echo "        image: nginx:stable-alpine"
     echo "        ports:"
     echo "            - 80:80"
     echo "            - 443:443"
@@ -55,20 +48,12 @@ function gen_docker_compose() {
     echo "            - $work_dir/nginx/conf.d:/etc/nginx/conf.d:ro"
     echo "            - $work_dir/letsencrypt:/etc/letsencrypt:ro"
     echo "        networks:"
-    echo "            - $network"
     for network in "${networks[@]}"
     do
         echo "            - $network"
     done
-    echo "    certbot:"
-    echo "        image: certbot/certbot"
-    echo "        volumes:"
-    echo "            - $work_dir/letsencrypt/certificates:/etc/letsencrypt"
-    echo "            - $work_dir/letsencrypt/acme-challenge:/var/www/html"
-    echo "        entrypoint: \"/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'\""
     echo
     echo "networks:"
-    echo "    $network:"
     for network in "${networks[@]}"
     do
         echo "    $network:"
@@ -125,11 +110,11 @@ function gen_nginx_conf() {
 }
 
 function gen_certificate() {
-    if [[ "$email" =~ example\.org ]]
+    if [[ "$email" =~ example\.org$ ]]
     then
         error "Email @example.org not allowed"
     fi
-    
+
     domains_args=""
     for domain in ${domains[$1]}
     do
@@ -142,10 +127,16 @@ function gen_certificate() {
     staging_arg=""
     if [[ "$staging" = "true" ]]
     then
-        staging_arg="--staging"
+        staging_arg="--staging --break-my-certs"
     fi
 
-    docker run --rm -it -v $work_dir/letsencrypt/certificates:/etc/letsencrypt -v $work_dir/letsencrypt/acme-challenge:/var/www/html certbot/certbot certonly --webroot --webroot-path /var/www/html $staging_arg $domains_args --email $email -n --agree-tos --force-renewal
+    force_arg=""
+    if [[ "$force" = "true" ]]
+    then
+        force_arg="--force-renewal"
+    fi
+
+    docker run --rm -it -v $work_dir/letsencrypt/certificates:/etc/letsencrypt -v $work_dir/letsencrypt/acme-challenge:/var/www/html certbot/certbot certonly --webroot --webroot-path /var/www/html $staging_arg $domains_args --email $email -n --agree-tos $force_arg
 
     if [[ "$?" = "0" ]]
     then
@@ -157,6 +148,33 @@ function gen_certificate() {
 
 function gen_dhparam() {
     openssl dhparam -out $work_dir/nginx/dhparam.pem 2048 
+}
+
+function gen_systemd_service() {
+    echo "# /etc/systemd/system/certbot.service"
+    echo
+    echo "[Unit]"
+    echo "Description=Certbot automatic renewal"
+    echo "After=docker.service"
+    echo "Requires=docker.service"
+    echo
+    echo "[Service]"
+    echo "Type=oneshot"
+    echo "ExecStart=docker run --it --rm -v $work_dir/letsencrypt/certificates:/etc/letsencrypt -v $work_dir/letsencrypt/acme-challenge:/var/www/html certbot/certbot certbot renew"
+}
+
+function gen_systemd_timer() {
+    echo "# /etc/systemd/system/certbot.timer"
+    echo
+    echo "[Unit]"
+    echo "Description=Certbot automatic renewal"
+    echo "Requires=certbot.service"
+    echo
+    echo "[Timer]"
+    echo "OnCalendar=*-*-* 00,12:00:00"
+    echo
+    echo "[Install]"
+    echo "WantedBy=timers.target"
 }
 
 function parse_config() {
@@ -178,6 +196,10 @@ function parse_config() {
                 https+=("$default_https")
                 service_id=$((${#services[@]}-1))
                 state="service"
+                continue
+            elif [[ "$section" = "docker" ]]
+            then
+                state="docker"
                 continue
             elif [[ "$section" = "letsencrypt" ]]
             then
@@ -212,6 +234,21 @@ function parse_config() {
                     esac
                 fi
                 ;;
+            docker)
+                if [[ "$line" =~ ^([a-z]+)=(.*)$ ]]
+                then
+                    property=${BASH_REMATCH[1]}
+                    value=${BASH_REMATCH[2]}
+                    case $property in
+                        networks)
+                            networks+=("${value//\"/}")
+                            ;;
+                        *)
+                            error "Invalid property '$property'"
+                            ;;
+                    esac
+                fi
+                ;;
             letsencrypt)
                 if [[ "$line" =~ ^([a-z]+)=(.*)$ ]]
                 then
@@ -226,8 +263,14 @@ function parse_config() {
                             ;;
                     esac
                 fi
+                ;;
         esac
     done < $config
+
+    if [[ "${#services[@]}" = "0" ]]
+    then
+        error "No service configured"
+    fi
 
     if [[ "$debug" = "true" ]]
     then
@@ -237,18 +280,18 @@ function parse_config() {
     fi
 }
 
-commands="help status build clean"
-version=$(git describe || echo "v0.0.0")
+commands="help status up autorenew clean"
+version=$(git describe --tags || echo "v0.0.0")
 
 function command_help() {
-    echo "${bold}Docker multiapp manager$normal $version"
+    echo -e "${bold}Docker multiapp manager$normal $version"
     echo "github.com/abel0b/docker-multiapp"
     echo
     echo "Usage: ./manage.sh <command>"
     echo
     echo "Commands"
     echo "  status  Display status information"
-    echo "  build   Generate nginx and docker configuration"
+    echo "  up      Generate configuration and start proxy"
 }
 
 function command_status() {
@@ -259,22 +302,33 @@ function command_status() {
     done
 }
 
-function command_build() {
+function command_up() {
+    if [[ "$swarm" = "true" ]]
+    then
+        docker network create --attachable --scope swarm --driver overlay ${networks[0]} || true
+    else
+        docker network create --attachable ${networks[0]} || true
+    fi
+
     gen_docker_compose > docker-compose.yml
 
-    mkdir -p nginx/conf.d
-    rm -rf nginx/conf.d/*.conf
+    mkdir -p $work_dir/nginx/conf.d
+    rm -rf $work_dir/nginx/conf.d/*.conf
 
     for i in "${!services[@]}"
     do
-        gen_nginx_conf $i > nginx/conf.d/${services[$i]}.conf
+        gen_nginx_conf $i > $work_dir/nginx/conf.d/${services[$i]}.conf
     done
 
-    docker-compose up -d
-    docker-compose exec nginx nginx -t
-    docker-compose exec nginx nginx -s reload
+    docker run --rm -it -v $work_dir/nginx/nginx.conf:/etc/nginx/nginx.conf:ro -v $work_dir/nginx/dhparam.pem:/etc/nginx/dhparam.pem:ro -v $work_dir/nginx/conf.d:/etc/nginx/conf.d:ro -v $work_dir/letsencrypt:/etc/letsencrypt:ro nginx:stable-alpine nginx -t
 
-    sleep 5
+    #if [[ "$swarm" = "true" ]]
+    #then
+        docker stack deploy --compose-file docker-compose.yml $stack
+    #else
+    #    docker-compose down || true
+    #    docker-compose up -d
+    #fi
 
     for i in "${!services[@]}"
     do
@@ -283,14 +337,31 @@ function command_build() {
 
     # Uncomment ssl configuration
     sed -r -i "/^\s*#.*$/s/#//" $work_dir/nginx/conf.d/*.conf
-    docker-compose exec nginx nginx -t
-    docker-compose exec nginx nginx -s reload
+    
+    docker run --rm -it -v $work_dir/nginx/nginx.conf:/etc/nginx/nginx.conf:ro -v $work_dir/nginx/dhparam.pem:/etc/nginx/dhparam.pem:ro -v $work_dir/nginx/conf.d:/etc/nginx/conf.d:ro -v $work_dir/letsencrypt:/etc/letsencrypt:ro nginx:stable-alpine nginx -t
+    #if [[ "$swarm" = "true" ]]
+    #then
+        docker stack deploy --compose-file docker-compose.yml $stack
+    #else
+    #    docker-compose restart nginx
+    #fi
+
+    mkdir -p $work_dir/systemd
+    gen_systemd_service > $work_dir/systemd/certbot.service
+    gen_systemd_timer > $work_dir/systemd/certbot.timer
 }
 
 function command_clean() {
-    rm -rf nginx/conf.d/*
-    rm -rf letsencrypt/*
-} 
+    rm -rf $work_dir/nginx/conf.d/*
+    rm -rf $work_dir/letsencrypt/*
+}
+
+function command_autorenew() {
+    ln -sf $work_dir/systemd/certbot.service /etc/systemd/system/certbot.service 
+    ln -sf $work_dir/systemd/certbot.timer /etc/systemd/system/certbot.timer
+    systemctl enable certbot.timer
+    systemctl start certbot.timer
+}
 
 command=""
 arguments=""
